@@ -11,7 +11,9 @@ function secretKey(): Uint8Array {
   if (!s || s.length < 32) {
     throw new Error("SESSION_SECRET must be set to at least 32 characters.");
   }
-  return new TextEncoder().encode(s);
+  // The admin password is part of the signing key, so changing
+  // ADMIN_PASSWORD signs out every existing session (e.g. after a leak).
+  return new TextEncoder().encode(`${s}\u0000${process.env.ADMIN_PASSWORD ?? ""}`);
 }
 
 export async function signSession(): Promise<string> {

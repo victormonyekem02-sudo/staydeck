@@ -6,7 +6,7 @@ import {
   ArrowDown, ArrowUp, Bot, Building2, Check, Copy, ExternalLink, Globe, MapPin, Palette, Plus, Trash2, BedDouble, ListChecks,
 } from "lucide-react";
 import { Badge, Button, Card, Field, Input, Textarea, api, cn, useToast } from "./ui";
-import { slugify } from "./new-business-form";
+import { slugify } from "@/lib/slug";
 import type { Business, Faq, Profile, Room } from "@/lib/types";
 
 const TABS = [
@@ -49,7 +49,7 @@ export function BusinessEditor({ initial, baseUrl }: { initial: Business; baseUr
     try {
       const { business } = await api<{ business: Business }>(`/api/admin/businesses/${b.id}`, {
         method: "PUT",
-        json: { slug: b.slug, active: b.active, profile: b.profile },
+        json: { slug: slugify(b.slug), active: b.active, profile: b.profile },
       });
       setSaved(business);
       setB(business);
@@ -281,7 +281,8 @@ export function BusinessEditor({ initial, baseUrl }: { initial: Business; baseUr
                       id="slug"
                       value={b.slug}
                       maxLength={48}
-                      onChange={(e) => setB((cur) => ({ ...cur, slug: slugify(e.target.value) }))}
+                      onChange={(e) => setB((cur) => ({ ...cur, slug: slugify(e.target.value, { trim: false }) }))}
+                      onBlur={() => setB((cur) => ({ ...cur, slug: slugify(cur.slug) }))}
                       className="h-10 w-full bg-transparent px-1 font-mono text-sm focus:outline-none"
                     />
                   </div>

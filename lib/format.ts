@@ -1,3 +1,8 @@
+import { localDate, localMidnightUtc } from "./stats";
+
+/** Calendar used for "this month", daily charts and displayed times. */
+export const TIME_ZONE = process.env.NEXT_PUBLIC_TIME_ZONE || "Africa/Johannesburg";
+
 export function money(currency: string, amount: number): string {
   const n = Number.isInteger(amount) ? amount.toLocaleString("en-ZA") : amount.toFixed(2);
   return `${currency}${n}`;
@@ -20,13 +25,13 @@ export function shortDate(iso: string): string {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Africa/Johannesburg",
+    timeZone: TIME_ZONE,
   });
 }
 
+/** UTC instant of local midnight on the 1st of the current month in TIME_ZONE. */
 export function startOfMonthIso(): string {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
+  return localMidnightUtc(`${localDate(new Date(), TIME_ZONE).slice(0, 7)}-01`, TIME_ZONE).toISOString();
 }
 
 export function baseUrl(): string {

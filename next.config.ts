@@ -12,7 +12,8 @@ const nextConfig: NextConfig = {
     return [
       // Everything except the embeddable chat may not be framed by other sites.
       {
-        source: "/((?!embed).*)",
+        // "embed/" with the slash: a business slug like "embedded-lodge" must still get DENY.
+        source: "/((?!embed/).*)",
         headers: [...securityHeaders, { key: "X-Frame-Options", value: "DENY" }],
       },
       // The embed page is meant to live inside a lodge's own website.

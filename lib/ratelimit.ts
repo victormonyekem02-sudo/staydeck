@@ -22,10 +22,13 @@ export function rateLimit(key: string, limit: number, windowMs: number): { ok: b
   return { ok: b.count <= limit, retryAfter: Math.ceil((b.resetAt - t) / 1000) };
 }
 
+/** x-real-ip first: on Vercel it is set by the platform and can't be
+ *  spoofed, whereas the first x-forwarded-for entry is whatever the client
+ *  sent when the app sits behind a proxy that appends to that header. */
 export function clientIp(req: Request): string {
   return (
+    req.headers.get("x-real-ip")?.trim() ||
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.headers.get("x-real-ip") ||
     "unknown"
   );
 }

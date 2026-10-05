@@ -3,10 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Field, Input, Select, api } from "./ui";
+import { slugify } from "@/lib/slug";
 import type { Business } from "@/lib/types";
-
-export const slugify = (s: string) =>
-  s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
 
 export function NewBusinessForm({ templates, defaultFrom }: { templates: { id: string; name: string }[]; defaultFrom?: string }) {
   const router = useRouter();
@@ -24,7 +22,7 @@ export function NewBusinessForm({ templates, defaultFrom }: { templates: { id: s
     try {
       const { business } = await api<{ business: Business }>("/api/admin/businesses", {
         method: "POST",
-        json: { name, slug, ...(from ? { cloneFrom: from } : {}) },
+        json: { name, slug: slugify(slug), ...(from ? { cloneFrom: from } : {}) },
       });
       router.push(`/admin/businesses/${business.id}?created=1`);
     } catch (err) {
@@ -62,8 +60,9 @@ export function NewBusinessForm({ templates, defaultFrom }: { templates: { id: s
               value={slug}
               onChange={(e) => {
                 setSlugEdited(true);
-                setSlug(slugify(e.target.value));
+                setSlug(slugify(e.target.value, { trim: false }));
               }}
+              onBlur={() => setSlug(slugify(slug))}
             />
           </div>
         </Field>

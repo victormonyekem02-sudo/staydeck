@@ -1,6 +1,9 @@
+import { after } from "next/server";
 import { z } from "zod";
 import { runReceptionist } from "@/lib/ai";
-import { createLead, getBusinessBySlug, getConversation, saveConversation } from "@/lib/db";
+import {
+  createLead, getBusinessBySlug, getConversation, getLeadByConversation, saveConversation, updateLeadDetails,
+} from "@/lib/db";
 import { notifyOwner } from "@/lib/mail";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 import type { ChatMessage } from "@/lib/types";
@@ -63,9 +66,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
   try {
     const result = await runReceptionist(business, history, async (inq) => {
-      const lead = await createLead({
-        businessId: business.id,
-        conversationId: convId,
+      // One inquiry per conversation. If the guest later corrects their
+      // dates, update it rather than adding a duplicate: duplicates would
+      // double-count in the inbox and inflate the inquiry statistics.
+      const details = {
         guestName: inq.guestName,
         contact: inq.contact,
         checkIn: inq.checkIn,
@@ -73,8 +77,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         guests: inq.guests ?? null,
         roomPreference: inq.roomPreference,
         notes: inq.notes,
-      });
-      await notifyOwner(business, lead);
+      };
+      const existing = await getLeadByConversation(convId);
+      let lead;
+      if (existing) {
+        // Keep earlier answers the model didn't repeat this time.
+        const merged = { ...details };
+        for (const k of Object.keys(merged) as (keyof typeof merged)[]) {
+          if (merged[k] === "" || merged[k] === null) (merged as Record<string, unknown>)[k] = existing[k];
+        }
+        await updateLeadDetails(existing.id, merged);
+        lead = { ...existing, ...merged };
+      } else {
+        lead = await createLead({ businessId: business.id, conversationId: convId, ...details });
+      }
+      // Send after the response: a slow SMTP server must not hold up (or
+      // time out) the guest's reply. The lead is already saved.
+      after(() => notifyOwner(business, lead, { updated: !!existing }));
     });
 
     history = [...history, { role: "assistant", content: result.reply }];
@@ -94,6 +113,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     const fallback = p.whatsapp
       ? `Sorry, I'm having trouble right now. Please message us on WhatsApp: +${p.whatsapp}.`
       : "Sorry, I'm having trouble right now. Please contact the team directly.";
+    // Record what the guest actually saw, so the transcript is honest and
+    // the next turn doesn't start with two user messages in a row.
+    await saveConversation({
+      id: convId,
+      businessId: business.id,
+      messages: [...history, { role: "assistant", content: fallback }],
+      leadCaptured: false,
+      addInputTokens: 0,
+      addOutputTokens: 0,
+    }).catch((e) => console.error("[staydesk] could not save failed turn:", e));
     return Response.json({ conversationId: convId, reply: fallback, error: true }, { status: 200 });
   }
 }

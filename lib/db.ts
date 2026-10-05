@@ -11,6 +11,8 @@ import {
   type Profile,
 } from "./types";
 import { seedProfile } from "./seed";
+import { lastNDates, localMidnightUtc, tzOffsetMinutes } from "./stats";
+import { TIME_ZONE } from "./format";
 
 /* ─────────────────────────────────────────────────────────────────────
  * Storage. libSQL = SQLite locally (a file) and Turso in production,
@@ -65,6 +67,7 @@ const SCHEMA = [
      status TEXT NOT NULL DEFAULT 'new'
    )`,
   `CREATE INDEX IF NOT EXISTS idx_leads_business ON leads(business_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_leads_conversation ON leads(conversation_id)`,
 ];
 
 async function db(): Promise<Client> {
@@ -179,6 +182,15 @@ export async function deleteBusiness(id: string): Promise<void> {
 
 /* ── Conversations ──────────────────────────────────────────────────── */
 
+function parseMessages(raw: unknown): ChatMessage[] {
+  try {
+    const v = JSON.parse(String(raw));
+    return Array.isArray(v) ? (v as ChatMessage[]) : [];
+  } catch {
+    return []; // one corrupt row must not break the whole list
+  }
+}
+
 function toConversation(r: Row): Conversation {
   return {
     id: String(r.id),
@@ -186,7 +198,7 @@ function toConversation(r: Row): Conversation {
     businessName: r.business_name ? String(r.business_name) : undefined,
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
-    messages: JSON.parse(String(r.messages)) as ChatMessage[],
+    messages: parseMessages(r.messages),
     leadCaptured: Number(r.lead_captured) === 1,
     inputTokens: Number(r.input_tokens),
     outputTokens: Number(r.output_tokens),
@@ -243,32 +255,21 @@ export async function listConversations(opts: { businessId?: string; limit?: num
   const where = opts.businessId ? "WHERE c.business_id = ?" : "";
   const args: InValue[] = opts.businessId ? [opts.businessId] : [];
   const { rows } = await c.execute({
-    sql: `SELECT c.*, b.profile AS business_profile FROM conversations c
+    sql: `SELECT c.*, json_extract(b.profile, '$.name') AS business_name FROM conversations c
           LEFT JOIN businesses b ON b.id = c.business_id
           ${where} ORDER BY c.updated_at DESC LIMIT ${Math.min(opts.limit ?? 100, 500)}`,
     args,
   });
-  return rows.map((r) => {
-    const row = r as Row;
-    return toConversation({ ...row, business_name: nameFromProfile(row.business_profile) });
-  });
+  return rows.map((r) => toConversation(r as Row));
 }
 
 /* ── Leads ──────────────────────────────────────────────────────────── */
-
-function nameFromProfile(p: unknown): string | undefined {
-  try {
-    return p ? String(JSON.parse(String(p)).name) : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 function toLead(r: Row): Lead {
   return {
     id: String(r.id),
     businessId: String(r.business_id),
-    businessName: nameFromProfile(r.business_profile),
+    businessName: r.business_name ? String(r.business_name) : undefined,
     createdAt: String(r.created_at),
     guestName: String(r.guest_name),
     contact: String(r.contact),
@@ -287,16 +288,40 @@ export async function createLead(
 ): Promise<Lead> {
   const c = await db();
   const id = randomUUID();
+  const createdAt = now();
   await c.execute({
     sql: `INSERT INTO leads (id, business_id, conversation_id, created_at, guest_name, contact,
           check_in, check_out, guests, room_preference, notes, status)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')`,
     args: [
-      id, lead.businessId, lead.conversationId, now(), lead.guestName, lead.contact,
+      id, lead.businessId, lead.conversationId, createdAt, lead.guestName, lead.contact,
       lead.checkIn, lead.checkOut, lead.guests, lead.roomPreference, lead.notes,
     ],
   });
-  return { ...lead, id, createdAt: now(), status: "new" };
+  return { ...lead, id, createdAt, status: "new" };
+}
+
+/** The inquiry already captured in a conversation, if any. */
+export async function getLeadByConversation(conversationId: string): Promise<Lead | null> {
+  const c = await db();
+  const { rows } = await c.execute({
+    sql: "SELECT * FROM leads WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 1",
+    args: [conversationId],
+  });
+  return rows[0] ? toLead(rows[0] as Row) : null;
+}
+
+/** Overwrites the guest-supplied fields of an inquiry; keeps id, status and created_at. */
+export async function updateLeadDetails(
+  id: string,
+  d: Pick<Lead, "guestName" | "contact" | "checkIn" | "checkOut" | "guests" | "roomPreference" | "notes">
+): Promise<void> {
+  const c = await db();
+  await c.execute({
+    sql: `UPDATE leads SET guest_name = ?, contact = ?, check_in = ?, check_out = ?, guests = ?,
+          room_preference = ?, notes = ? WHERE id = ?`,
+    args: [d.guestName, d.contact, d.checkIn, d.checkOut, d.guests, d.roomPreference, d.notes, id],
+  });
 }
 
 export async function listLeads(opts: { businessId?: string; status?: LeadStatus; limit?: number } = {}): Promise<Lead[]> {
@@ -306,7 +331,7 @@ export async function listLeads(opts: { businessId?: string; status?: LeadStatus
   if (opts.businessId) { clauses.push("l.business_id = ?"); args.push(opts.businessId); }
   if (opts.status) { clauses.push("l.status = ?"); args.push(opts.status); }
   const { rows } = await c.execute({
-    sql: `SELECT l.*, b.profile AS business_profile FROM leads l
+    sql: `SELECT l.*, json_extract(b.profile, '$.name') AS business_name FROM leads l
           LEFT JOIN businesses b ON b.id = l.business_id
           ${clauses.length ? "WHERE " + clauses.join(" AND ") : ""}
           ORDER BY l.created_at DESC LIMIT ${Math.min(opts.limit ?? 200, 1000)}`,
@@ -329,6 +354,9 @@ export async function deleteLead(id: string): Promise<void> {
 
 export type BusinessStats = {
   conversations: number;
+  /** Conversations (started in the period) that have at least one inquiry. */
+  conversationsWithInquiry: number;
+  /** Inquiries created in the period (a conversation normally has at most one). */
   leads: number;
   booked: number;
   inputTokens: number;
@@ -341,8 +369,10 @@ export async function statsSince(sinceIso: string): Promise<Record<string, Busin
   const [conv, leads] = await c.batch(
     [
       {
-        sql: `SELECT business_id, COUNT(*) AS n, SUM(input_tokens) AS i, SUM(output_tokens) AS o
-              FROM conversations WHERE created_at >= ? GROUP BY business_id`,
+        // EXISTS (not lead_captured) so deleting a spam inquiry removes it from the rate.
+        sql: `SELECT business_id, COUNT(*) AS n, SUM(input_tokens) AS i, SUM(output_tokens) AS o,
+                     SUM(EXISTS (SELECT 1 FROM leads l WHERE l.conversation_id = c.id)) AS k
+              FROM conversations c WHERE created_at >= ? GROUP BY business_id`,
         args: [sinceIso],
       },
       {
@@ -355,10 +385,11 @@ export async function statsSince(sinceIso: string): Promise<Record<string, Busin
   );
   const out: Record<string, BusinessStats> = {};
   const get = (id: string) =>
-    (out[id] ??= { conversations: 0, leads: 0, booked: 0, inputTokens: 0, outputTokens: 0 });
+    (out[id] ??= { conversations: 0, conversationsWithInquiry: 0, leads: 0, booked: 0, inputTokens: 0, outputTokens: 0 });
   for (const r of conv.rows) {
     const s = get(String(r.business_id));
     s.conversations = Number(r.n);
+    s.conversationsWithInquiry = Number(r.k ?? 0);
     s.inputTokens = Number(r.i ?? 0);
     s.outputTokens = Number(r.o ?? 0);
   }
@@ -370,24 +401,30 @@ export async function statsSince(sinceIso: string): Promise<Record<string, Busin
   return out;
 }
 
-/** Daily conversation and lead counts for the last N days (all businesses or one). */
+/**
+ * Daily conversations, bucketed by the local calendar day they started
+ * (TIME_ZONE), and how many of those conversations produced an inquiry.
+ * Both counts come from the same cohort, so withInquiry ≤ conversations.
+ */
 export async function dailySeries(days: number, businessId?: string) {
   const c = await db();
-  const since = new Date(Date.now() - (days - 1) * 86400000);
-  since.setUTCHours(0, 0, 0, 0);
-  const filter = businessId ? "AND business_id = ?" : "";
-  const args: InValue[] = businessId ? [since.toISOString(), businessId] : [since.toISOString()];
-  const [conv, leads] = await c.batch(
-    [
-      { sql: `SELECT substr(created_at,1,10) AS d, COUNT(*) AS n FROM conversations WHERE created_at >= ? ${filter} GROUP BY d`, args },
-      { sql: `SELECT substr(created_at,1,10) AS d, COUNT(*) AS n FROM leads WHERE created_at >= ? ${filter} GROUP BY d`, args },
-    ],
-    "read"
-  );
-  const cm = new Map(conv.rows.map((r) => [String(r.d), Number(r.n)]));
-  const lm = new Map(leads.rows.map((r) => [String(r.d), Number(r.n)]));
-  return Array.from({ length: days }, (_, i) => {
-    const d = new Date(since.getTime() + i * 86400000).toISOString().slice(0, 10);
-    return { date: d, conversations: cm.get(d) ?? 0, leads: lm.get(d) ?? 0 };
+  const dates = lastNDates(days, TIME_ZONE);
+  const since = localMidnightUtc(dates[0], TIME_ZONE).toISOString();
+  // One offset for the whole window: exact for zones without DST (e.g. SAST).
+  const off = tzOffsetMinutes(new Date(), TIME_ZONE);
+  const shift = `${off >= 0 ? "+" : ""}${off} minutes`;
+  const filter = businessId ? "AND c.business_id = ?" : "";
+  const args: InValue[] = businessId ? [shift, since, businessId] : [shift, since];
+  const { rows } = await c.execute({
+    sql: `SELECT substr(datetime(c.created_at, ?), 1, 10) AS d, COUNT(*) AS n,
+                 SUM(EXISTS (SELECT 1 FROM leads l WHERE l.conversation_id = c.id)) AS k
+          FROM conversations c WHERE c.created_at >= ? ${filter} GROUP BY d`,
+    args,
   });
+  const byDay = new Map(rows.map((r) => [String(r.d), { n: Number(r.n), k: Number(r.k ?? 0) }]));
+  return dates.map((date) => ({
+    date,
+    conversations: byDay.get(date)?.n ?? 0,
+    withInquiry: byDay.get(date)?.k ?? 0,
+  }));
 }

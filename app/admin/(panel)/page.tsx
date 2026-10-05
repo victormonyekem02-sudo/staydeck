@@ -3,7 +3,15 @@ import { ArrowUpRight, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/admin-shell";
 import { requireAdminPage } from "@/lib/auth";
 import { dailySeries, listBusinesses, statsSince } from "@/lib/db";
-import { estimateCostUsd, startOfMonthIso, usd } from "@/lib/format";
+import { TIME_ZONE, estimateCostUsd, startOfMonthIso, usd } from "@/lib/format";
+import { pct, wilson } from "@/lib/stats";
+
+/** "12% (95% CI 4–27%, 3 of 25)": the point estimate never travels without its uncertainty. */
+function rateWithCi(k: number, n: number) {
+  const ci = wilson(k, n);
+  if (!ci) return { value: "—", note: "No conversations yet" };
+  return { value: pct(k / n, 1), note: `95% CI ${pct(ci.lower)}–${pct(ci.upper)} · ${k} of ${n}` };
+}
 
 export default async function Dashboard() {
   await requireAdminPage();
@@ -16,26 +24,27 @@ export default async function Dashboard() {
   const totals = Object.values(stats).reduce(
     (a, s) => ({
       conversations: a.conversations + s.conversations,
+      conversationsWithInquiry: a.conversationsWithInquiry + s.conversationsWithInquiry,
       leads: a.leads + s.leads,
       booked: a.booked + s.booked,
       inputTokens: a.inputTokens + s.inputTokens,
       outputTokens: a.outputTokens + s.outputTokens,
     }),
-    { conversations: 0, leads: 0, booked: 0, inputTokens: 0, outputTokens: 0 }
+    { conversations: 0, conversationsWithInquiry: 0, leads: 0, booked: 0, inputTokens: 0, outputTokens: 0 }
   );
   const cost = estimateCostUsd(totals.inputTokens, totals.outputTokens);
-  const rate = totals.conversations ? totals.leads / totals.conversations : null;
-  const month = new Date().toLocaleString("en-GB", { month: "long", timeZone: "Africa/Johannesburg" });
+  // Rate = share of this month's conversations that produced an inquiry.
+  // Numerator and denominator are the same cohort, so it is a true
+  // proportion in [0, 1] (leads ÷ conversations was not: two inquiries in
+  // one chat, or a chat started last month, could push it past 100%).
+  const rate = rateWithCi(totals.conversationsWithInquiry, totals.conversations);
+  const month = new Date().toLocaleString("en-GB", { month: "long", timeZone: TIME_ZONE });
 
   const kpis = [
     { label: "Conversations", value: totals.conversations.toLocaleString() },
     { label: "Booking inquiries", value: totals.leads.toLocaleString() },
-    {
-      label: "Inquiry rate",
-      value: rate === null ? "—" : `${(rate * 100).toFixed(1)}%`,
-      note: totals.conversations > 0 && totals.conversations < 30 ? `n = ${totals.conversations}, small sample` : undefined,
-    },
-    { label: "Marked booked", value: totals.booked.toLocaleString() },
+    { label: "Inquiry rate", value: rate.value, note: rate.note },
+    { label: "Marked booked", value: totals.booked.toLocaleString(), note: "Lower bound: only what you update" },
     { label: "Est. AI cost", value: usd(cost), note: "From token usage" },
   ];
 
@@ -61,20 +70,20 @@ export default async function Dashboard() {
 
       <section className="mt-6 rounded-2xl border border-line bg-card p-5" aria-labelledby="trend">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h2 id="trend" className="font-medium">Last 14 days</h2>
+          <h2 id="trend" className="font-medium">Last 14 days <span className="text-xs font-normal text-muted">by day the chat started</span></h2>
           <div className="flex items-center gap-4 text-xs text-ink-soft">
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-line-strong" />Conversations</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent" />Inquiries</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent" />Led to an inquiry</span>
           </div>
         </div>
         <div className="flex h-40 items-end gap-1.5" role="img" aria-label="Daily conversations and inquiries for the last 14 days">
           {series.map((d) => (
             <div key={d.date} className="group relative flex h-full flex-1 flex-col justify-end">
               <div className="relative w-full rounded-t bg-line-strong" style={{ height: `${(d.conversations / max) * 100}%`, minHeight: d.conversations ? 4 : 0 }}>
-                <div className="absolute inset-x-0 bottom-0 rounded-t bg-accent" style={{ height: d.conversations ? `${(d.leads / d.conversations) * 100}%` : 0 }} />
+                <div className="absolute inset-x-0 bottom-0 rounded-t bg-accent" style={{ height: d.conversations ? `${(d.withInquiry / d.conversations) * 100}%` : 0 }} />
               </div>
               <div className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 font-mono text-[11px] text-white group-hover:block">
-                {d.date.slice(5)} · {d.conversations} / {d.leads}
+                {d.date.slice(5)} · {d.conversations} chats · {d.withInquiry} with inquiry
               </div>
             </div>
           ))}
@@ -97,7 +106,7 @@ export default async function Dashboard() {
                 <th className="px-5 py-3 font-medium">Business</th>
                 <th className="px-5 py-3 font-medium text-right">Chats</th>
                 <th className="px-5 py-3 font-medium text-right">Inquiries</th>
-                <th className="px-5 py-3 font-medium text-right">Rate</th>
+                <th className="px-5 py-3 font-medium text-right" title="Share of chats with an inquiry, with 95% Wilson interval">Rate (95% CI)</th>
                 <th className="px-5 py-3 font-medium text-right">AI cost</th>
                 <th className="px-5 py-3"><span className="sr-only">Links</span></th>
               </tr>
@@ -105,7 +114,7 @@ export default async function Dashboard() {
             <tbody className="divide-y divide-line">
               {businesses.map((b) => {
                 const s = stats[b.id];
-                const r = s?.conversations ? `${((s.leads / s.conversations) * 100).toFixed(0)}%` : "—";
+                const ci = s ? wilson(s.conversationsWithInquiry, s.conversations) : null;
                 return (
                   <tr key={b.id} className="transition-colors hover:bg-paper/60">
                     <td className="px-5 py-3">
@@ -117,7 +126,14 @@ export default async function Dashboard() {
                     </td>
                     <td className="px-5 py-3 text-right font-mono">{s?.conversations ?? 0}</td>
                     <td className="px-5 py-3 text-right font-mono">{s?.leads ?? 0}</td>
-                    <td className="px-5 py-3 text-right font-mono">{r}</td>
+                    <td className="px-5 py-3 text-right font-mono">
+                      {ci && s ? (
+                        <>
+                          {pct(s.conversationsWithInquiry / s.conversations)}
+                          <span className="block text-[11px] text-muted">{pct(ci.lower)}–{pct(ci.upper)}</span>
+                        </>
+                      ) : "—"}
+                    </td>
                     <td className="px-5 py-3 text-right font-mono">{usd(estimateCostUsd(s?.inputTokens ?? 0, s?.outputTokens ?? 0))}</td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex justify-end gap-1">

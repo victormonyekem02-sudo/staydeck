@@ -57,6 +57,16 @@ The database (`staydesk.db`) is created automatically, with The Stone Guest Hous
 
 ## Metrics: read them like a statistician
 
-- **Inquiry rate** = inquiries ÷ conversations. With small n it is noisy: at n = 20 and an observed 10%, a 95% Wilson interval is roughly 3%–30%. The dashboard flags n < 30.
-- Conversations are not unique visitors, and "Marked booked" only counts what you update by hand. Treat booked counts as a lower bound unless you update every inquiry.
-- Before claiming "StayDesk got us X bookings" to a prospect, compare against a baseline month without it. Otherwise you're claiming causation from a before-only observation.
+- **Inquiry rate** = conversations that produced an inquiry ÷ conversations, both counted over the conversations *started* this month (local time, `NEXT_PUBLIC_TIME_ZONE`). It is a proper proportion: one chat with a corrected booking counts once, not twice, and a deleted spam inquiry drops out.
+- The dashboard shows the rate with a **95% Wilson score interval** instead of a bare percentage. At n = 20 and an observed 10% the interval is about 3%–30%: the data is consistent with a rate three times lower or three times higher. Don't compare two businesses (or two months) unless their intervals barely overlap. Even then, prefer a proper two-proportion test.
+- Conversations are not unique visitors (one guest in two tabs = two conversations), so the rate is per conversation, not per person.
+- "Marked booked" only counts what you update by hand. Treat it as a **lower bound**, and remember it measures inquiries → bookings, which StayDesk doesn't cause by itself.
+- Before claiming "StayDesk got us X bookings" to a prospect, compare against a baseline period without it, ideally the same season. Otherwise you're claiming causation from a before-only observation (seasonality and confounding make that unsafe).
+- Token cost is attributed to the month a conversation started. A chat that spans a month boundary is counted entirely in the first month.
+
+## Tests
+
+```bash
+npm test          # unit tests for the statistics, time-zone and slug helpers
+npm run typecheck
+```
