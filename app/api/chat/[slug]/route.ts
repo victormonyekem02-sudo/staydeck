@@ -2,9 +2,12 @@ import { after } from "next/server";
 import { z } from "zod";
 import { runReceptionist } from "@/lib/ai";
 import {
-  createLead, getBusinessBySlug, getConversation, getLeadByConversation, saveConversation, updateLeadDetails,
+  addDailyUsage, createLead, dailyUsage, getBusinessBySlug, getConversation, getLeadByConversation,
+  saveConversation, updateLeadDetails,
 } from "@/lib/db";
+import { TIME_ZONE, estimateCostUsd } from "@/lib/format";
 import { notifyOwner } from "@/lib/mail";
+import { localDate } from "@/lib/stats";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 import type { ChatMessage } from "@/lib/types";
 
@@ -17,6 +20,16 @@ const Body = z.object({
 });
 
 const MAX_TURNS = 30;
+
+/* Hard daily ceilings on estimated AI spend (USD), counted per local day.
+ * Per-IP limits don't stop someone rotating IPs; these cap the damage.
+ * Set to 0 to disable. Concurrent requests can overshoot by a few turns. */
+const budget = (name: string, fallback: number) => {
+  const v = Number(process.env[name] ?? fallback);
+  return Number.isFinite(v) && v >= 0 ? v : fallback;
+};
+const DAILY_BUDGET_PER_BUSINESS = budget("DAILY_AI_BUDGET_USD_PER_BUSINESS", 2);
+const DAILY_BUDGET_TOTAL = budget("DAILY_AI_BUDGET_USD_TOTAL", 10);
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -50,6 +63,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     return Response.json({
       conversationId,
       reply: "We've chatted a lot! Please contact the team directly so they can help you further.",
+      done: true,
+    });
+  }
+
+  const today = localDate(new Date(), TIME_ZONE);
+  const used = await dailyUsage(business.id, today);
+  const overBusiness = DAILY_BUDGET_PER_BUSINESS > 0 &&
+    estimateCostUsd(used.business.input, used.business.output) >= DAILY_BUDGET_PER_BUSINESS;
+  const overTotal = DAILY_BUDGET_TOTAL > 0 &&
+    estimateCostUsd(used.total.input, used.total.output) >= DAILY_BUDGET_TOTAL;
+  if (overBusiness || overTotal) {
+    console.warn(`[staydesk] daily AI budget reached (${overTotal ? "total" : business.slug}); chat paused until tomorrow`);
+    const p = business.profile;
+    return Response.json({
+      conversationId,
+      reply: p.whatsapp
+        ? `Our assistant is resting for today. Please message us on WhatsApp: +${p.whatsapp}.`
+        : "Our assistant is resting for today. Please contact the team directly.",
       done: true,
     });
   }
@@ -96,6 +127,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       after(() => notifyOwner(business, lead, { updated: !!existing }));
     });
 
+    await addDailyUsage(business.id, today, result.inputTokens, result.outputTokens);
     history = [...history, { role: "assistant", content: result.reply }];
     await saveConversation({
       id: convId,

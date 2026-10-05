@@ -68,6 +68,14 @@ const SCHEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_leads_business ON leads(business_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_leads_conversation ON leads(conversation_id)`,
+  // Token usage per business per local day, for the daily spend cap.
+  `CREATE TABLE IF NOT EXISTS usage_daily (
+     business_id TEXT NOT NULL,
+     day TEXT NOT NULL,
+     input_tokens INTEGER NOT NULL DEFAULT 0,
+     output_tokens INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (business_id, day)
+   )`,
 ];
 
 async function db(): Promise<Client> {
@@ -348,6 +356,37 @@ export async function setLeadStatus(id: string, status: LeadStatus): Promise<voi
 export async function deleteLead(id: string): Promise<void> {
   const c = await db();
   await c.execute({ sql: "DELETE FROM leads WHERE id = ?", args: [id] });
+}
+
+/* ── Daily usage (spend cap) ────────────────────────────────────────── */
+
+export async function addDailyUsage(businessId: string, day: string, input: number, output: number): Promise<void> {
+  if (input === 0 && output === 0) return;
+  const c = await db();
+  await c.execute({
+    sql: `INSERT INTO usage_daily (business_id, day, input_tokens, output_tokens) VALUES (?, ?, ?, ?)
+          ON CONFLICT (business_id, day) DO UPDATE SET
+            input_tokens = input_tokens + excluded.input_tokens,
+            output_tokens = output_tokens + excluded.output_tokens`,
+    args: [businessId, day, input, output],
+  });
+}
+
+/** Tokens used on `day` by one business and by all businesses together. */
+export async function dailyUsage(businessId: string, day: string) {
+  const c = await db();
+  const { rows } = await c.execute({
+    sql: `SELECT COALESCE(SUM(CASE WHEN business_id = ? THEN input_tokens END), 0) AS bi,
+                 COALESCE(SUM(CASE WHEN business_id = ? THEN output_tokens END), 0) AS bo,
+                 COALESCE(SUM(input_tokens), 0) AS ti, COALESCE(SUM(output_tokens), 0) AS tout
+          FROM usage_daily WHERE day = ?`,
+    args: [businessId, businessId, day],
+  });
+  const r = rows[0];
+  return {
+    business: { input: Number(r.bi), output: Number(r.bo) },
+    total: { input: Number(r.ti), output: Number(r.tout) },
+  };
 }
 
 /* ── Stats ──────────────────────────────────────────────────────────── */

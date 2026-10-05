@@ -53,7 +53,10 @@ The database (`staydesk.db`) is created automatically, with The Stone Guest Hous
 
 - Admin: single password, timing-safe compare, 5 attempts / 15 min per IP, signed httpOnly `SameSite=Strict` session (12h), origin check on every write, auth re-checked in every page and API route (not only the proxy).
 - Chat: history is stored server-side (guests can't forge earlier turns), 15 messages/min per IP, 30 turns per conversation, 1000 chars per message, prompt hardened against "ignore your instructions".
-- Rate limits are in-memory per server instance: good against casual abuse, not a hard guarantee. Watch the "Est. AI cost" card and set a monthly spend limit in the Anthropic Console.
+- Rate limits are in-memory per server instance: good against casual abuse, not a hard guarantee.
+- **Daily AI spend cap** (`DAILY_AI_BUDGET_USD_PER_BUSINESS`, default $2; `DAILY_AI_BUDGET_USD_TOTAL`, default $10): once reached, the chat gives the business's contact details instead of calling the AI until local midnight. It uses the same token-price estimate as the dashboard, and concurrent requests can overshoot by a few turns, so still set a monthly spend limit in the Anthropic Console.
+- AI calls share a 22 s deadline per message (10 s per call, at most one retry), so a slow API returns a polite fallback instead of the request being killed at the 30 s limit.
+- Headers: CSP (scripts, styles, fonts and frames limited to this site and Google Fonts; images from any https host), HSTS in production, `X-Frame-Options: DENY` everywhere except `/embed/*`. CSP still allows inline scripts because Next.js needs them; removing that requires per-request nonces.
 
 ## Metrics: read them like a statistician
 
