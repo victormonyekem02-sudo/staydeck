@@ -100,6 +100,14 @@ export type ChatResult = {
 
 let anthropic: Anthropic | null = null;
 
+/* The chat route may run for 30 s (maxDuration). The SDK's defaults (10 min
+ * timeout, 2 retries) would let the platform kill the request before the
+ * guest gets even the fallback reply, so the whole tool loop shares one
+ * deadline and each call gets a slice of what is left. */
+const LOOP_BUDGET_MS = 22_000;
+const CALL_TIMEOUT_MS = 10_000;
+const GIVE_UP = "Sorry, that took too long on our side. Please try again, or contact the team directly.";
+
 export async function runReceptionist(
   business: Business,
   history: ChatMessage[],
@@ -117,17 +125,31 @@ export async function runReceptionist(
   let inquiry: Inquiry | null = null;
   let inputTokens = 0;
   let outputTokens = 0;
+  const deadline = Date.now() + LOOP_BUDGET_MS;
 
   for (let step = 0; step < 3; step++) {
-    const res = await anthropic.messages.create({
-      model,
-      max_tokens: 500,
-      system,
-      tools: [bookingTool],
-      messages,
-    });
+    const remaining = deadline - Date.now();
+    if (remaining < 2_000) return { reply: GIVE_UP, inquiry, inputTokens, outputTokens };
+    // One retry (429/529/5xx/network) only when there is time for it.
+    const retries = remaining > 2 * CALL_TIMEOUT_MS ? 1 : 0;
+    const res = await anthropic.messages.create(
+      { model, max_tokens: 500, system, tools: [bookingTool], messages },
+      { timeout: Math.min(CALL_TIMEOUT_MS, Math.floor(remaining / (retries + 1))), maxRetries: retries }
+    );
     inputTokens += res.usage.input_tokens;
     outputTokens += res.usage.output_tokens;
+
+    if (res.stop_reason === "refusal") {
+      // Logged so you can see how often real guests hit this in the transcripts.
+      console.warn("[staydesk] model refusal:", res.stop_details?.category ?? "unknown", business.slug);
+      return {
+        reply: "I'm not able to help with that here. For anything else about your stay, just ask, or contact the team directly.",
+        inquiry, inputTokens, outputTokens,
+      };
+    }
+    if (res.stop_reason === "max_tokens") {
+      console.warn("[staydesk] reply hit max_tokens (truncated):", business.slug);
+    }
 
     const toolUses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (res.stop_reason !== "tool_use" || toolUses.length === 0) {
