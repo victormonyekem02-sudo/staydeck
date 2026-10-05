@@ -39,6 +39,8 @@ The database (`staydesk.db`) is created automatically, with The Stone Guest Hous
 
 ## Daily use
 
+**Full admin manual (editing, page headings, inquiries, statistics, troubleshooting): [docs/ADMIN_MANUAL.md](docs/ADMIN_MANUAL.md).**
+
 - **New client:** Admin → New business → *Clone of …* → fill contacts, rooms, FAQs → Save. Their site is live at `/<slug>` immediately.
 - **Client already has a website:** Publish & embed tab → copy the one-line script.
 - **Inquiries:** Booking inquiries page. Click the contact to open WhatsApp or email; set status to Contacted / Booked / Lost.

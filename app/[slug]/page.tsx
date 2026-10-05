@@ -5,7 +5,7 @@ import { ChatWidget } from "@/components/chat-widget";
 import { getBusinessBySlug } from "@/lib/db";
 import { onColor } from "@/lib/color";
 import { baseUrl, money } from "@/lib/format";
-import type { Business } from "@/lib/types";
+import { sectionHeading, type Business } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ slug: string }> };
@@ -47,6 +47,13 @@ export default async function BusinessSite({ params }: Props) {
   }
 
   const lowest = p.rooms.length ? Math.min(...p.rooms.map((r) => r.rate)) : null;
+  const h = {
+    rooms: sectionHeading(p.headings, "rooms"),
+    amenities: sectionHeading(p.headings, "amenities"),
+    policies: sectionHeading(p.headings, "policies"),
+    location: sectionHeading(p.headings, "location"),
+    faq: sectionHeading(p.headings, "faq"),
+  };
 
   return (
     <div className="bg-[#fbfaf7] text-ink" style={{ ["--brand" as string]: p.brandColor }}>
@@ -60,10 +67,10 @@ export default async function BusinessSite({ params }: Props) {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <a href="#top" className="font-display text-xl font-semibold tracking-tight">{p.name}</a>
           <nav className="hidden items-center gap-7 text-sm text-ink-soft md:flex" aria-label="Sections">
-            {p.rooms.length > 0 && <a href="#rooms" className="hover:text-ink">Rooms</a>}
-            {p.amenities.length > 0 && <a href="#amenities" className="hover:text-ink">Amenities</a>}
-            <a href="#location" className="hover:text-ink">Location</a>
-            {p.faqs.length > 0 && <a href="#faq" className="hover:text-ink">FAQ</a>}
+            {p.rooms.length > 0 && <a href="#rooms" className="hover:text-ink">{h.rooms.menu}</a>}
+            {p.amenities.length > 0 && <a href="#amenities" className="hover:text-ink">{h.amenities.menu}</a>}
+            <a href="#location" className="hover:text-ink">{h.location.menu}</a>
+            {p.faqs.length > 0 && <a href="#faq" className="hover:text-ink">{h.faq.menu}</a>}
           </nav>
           {p.whatsapp ? (
             <a href={wa(`Hi ${p.name}, I'd like to ask about a stay.`)} target="_blank" rel="noreferrer"
@@ -115,7 +122,7 @@ export default async function BusinessSite({ params }: Props) {
 
         {p.rooms.length > 0 && (
           <section id="rooms" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6">
-            <SectionTitle eyebrow="Stay" title="Rooms & rates" color={p.brandColor} />
+            <SectionTitle eyebrow={h.rooms.eyebrow} title={h.rooms.title} color={p.brandColor} />
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {p.rooms.map((r) => (
                 <article key={r.name} className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:shadow-lg">
@@ -156,7 +163,7 @@ export default async function BusinessSite({ params }: Props) {
             <div className="mx-auto grid max-w-6xl gap-12 px-4 sm:px-6 lg:grid-cols-2">
               {p.amenities.length > 0 && (
                 <div>
-                  <SectionTitle eyebrow="Comfort" title="Amenities" color={p.brandColor} />
+                  <SectionTitle eyebrow={h.amenities.eyebrow} title={h.amenities.title} color={p.brandColor} />
                   <ul className="grid gap-3 sm:grid-cols-2">
                     {p.amenities.map((a) => (
                       <li key={a} className="flex items-start gap-3 text-ink-soft">
@@ -170,7 +177,7 @@ export default async function BusinessSite({ params }: Props) {
                 </div>
               )}
               <div>
-                <SectionTitle eyebrow="Good to know" title="Policies" color={p.brandColor} />
+                <SectionTitle eyebrow={h.policies.eyebrow} title={h.policies.title} color={p.brandColor} />
                 <p className="mb-4 flex items-center gap-2 text-sm font-medium"><Clock className="h-4 w-4" aria-hidden /> Check-in from {p.checkIn} · Check-out by {p.checkOut}</p>
                 <ul className="space-y-2 text-sm leading-relaxed text-ink-soft">
                   {p.policies.map((x) => <li key={x} className="border-l-2 pl-3" style={{ borderColor: `${p.brandColor}55` }}>{x}</li>)}
@@ -181,7 +188,7 @@ export default async function BusinessSite({ params }: Props) {
         )}
 
         <section id="location" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:px-6">
-          <SectionTitle eyebrow="Find us" title="Location & contact" color={p.brandColor} />
+          <SectionTitle eyebrow={h.location.eyebrow} title={h.location.title} color={p.brandColor} />
           <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
             <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
               <p className="flex items-start gap-2 font-medium"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{[p.address, p.city].filter(Boolean).join(", ") || "Ask us for directions"}</p>
@@ -199,7 +206,7 @@ export default async function BusinessSite({ params }: Props) {
 
         {p.faqs.length > 0 && (
           <section id="faq" className="mx-auto max-w-3xl scroll-mt-20 px-4 pb-24 pt-8 sm:px-6">
-            <SectionTitle eyebrow="Questions" title="FAQ" color={p.brandColor} />
+            <SectionTitle eyebrow={h.faq.eyebrow} title={h.faq.title} color={p.brandColor} />
             <div className="divide-y divide-black/10 rounded-3xl bg-white px-6 shadow-sm ring-1 ring-black/5">
               {p.faqs.map((f) => (
                 <details key={f.q} className="group py-4">

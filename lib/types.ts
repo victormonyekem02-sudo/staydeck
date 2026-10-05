@@ -26,6 +26,46 @@ export const FaqSchema = z.object({
   a: str(1000).min(1, "Answer is required"),
 });
 
+/* Section headings on the public website. Every field may be left empty
+ * in the admin, which means "use the default" (see sectionHeading). */
+export const HEADING_SECTIONS = ["rooms", "amenities", "policies", "location", "faq"] as const;
+export type HeadingSection = (typeof HEADING_SECTIONS)[number];
+
+export const DEFAULT_HEADINGS: Record<HeadingSection, { eyebrow: string; title: string; menu: string }> = {
+  rooms: { eyebrow: "Stay", title: "Rooms & rates", menu: "Rooms" },
+  amenities: { eyebrow: "Comfort", title: "Amenities", menu: "Amenities" },
+  policies: { eyebrow: "Good to know", title: "Policies", menu: "" },
+  location: { eyebrow: "Find us", title: "Location & contact", menu: "Location" },
+  faq: { eyebrow: "Questions", title: "FAQ", menu: "FAQ" },
+};
+
+const HeadingSchema = z
+  .object({ eyebrow: str(40).default(""), title: str(80).default(""), menu: str(24).default("") })
+  .default({ eyebrow: "", title: "", menu: "" });
+
+export const HeadingsSchema = z
+  .object({
+    rooms: HeadingSchema,
+    amenities: HeadingSchema,
+    policies: HeadingSchema,
+    location: HeadingSchema,
+    faq: HeadingSchema,
+  })
+  .default({
+    rooms: { eyebrow: "", title: "", menu: "" },
+    amenities: { eyebrow: "", title: "", menu: "" },
+    policies: { eyebrow: "", title: "", menu: "" },
+    location: { eyebrow: "", title: "", menu: "" },
+    faq: { eyebrow: "", title: "", menu: "" },
+  });
+export type Headings = z.infer<typeof HeadingsSchema>;
+
+/** The heading to show: the owner's text, or the default where it's empty. */
+export function sectionHeading(h: Headings, key: HeadingSection) {
+  const d = DEFAULT_HEADINGS[key];
+  return { eyebrow: h[key].eyebrow || d.eyebrow, title: h[key].title || d.title, menu: h[key].menu || d.menu };
+}
+
 export const ProfileSchema = z.object({
   // Identity & brand
   name: str(100).min(1, "Business name is required"),
@@ -64,6 +104,9 @@ export const ProfileSchema = z.object({
   faqs: z.array(FaqSchema).max(40).default([]),
   aiNotes: str(2000).default(""),
   greeting: str(300).default(""),
+
+  // Website section headings (empty = default wording)
+  headings: HeadingsSchema,
 });
 
 export type Room = z.infer<typeof RoomSchema>;

@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowDown, ArrowUp, Bot, Building2, Check, Copy, ExternalLink, Globe, MapPin, Palette, Plus, Trash2, BedDouble, ListChecks,
+  ArrowDown, ArrowUp, Bot, Heading, Building2, Check, Copy, ExternalLink, Globe, MapPin, Palette, Plus, Trash2, BedDouble, ListChecks,
 } from "lucide-react";
 import { Badge, Button, Card, Field, Input, Textarea, api, cn, useToast } from "./ui";
 import { slugify } from "@/lib/slug";
-import type { Business, Faq, Profile, Room } from "@/lib/types";
+import { DEFAULT_HEADINGS, type Business, type Faq, type HeadingSection, type Headings, type Profile, type Room } from "@/lib/types";
 
 const TABS = [
   { id: "brand", label: "Brand", icon: Palette },
   { id: "contact", label: "Contact & location", icon: MapPin },
   { id: "rooms", label: "Rooms & rates", icon: BedDouble },
   { id: "stay", label: "Amenities & policies", icon: ListChecks },
+  { id: "headings", label: "Page headings", icon: Heading },
   { id: "ai", label: "AI receptionist", icon: Bot },
   { id: "publish", label: "Publish & embed", icon: Globe },
 ] as const;
@@ -226,6 +227,8 @@ export function BusinessEditor({ initial, baseUrl }: { initial: Business; baseUr
               />
             </>
           )}
+
+          {tab === "headings" && <HeadingsEditor headings={p.headings} onChange={(v) => set("headings", v)} />}
 
           {tab === "ai" && (
             <>
@@ -464,6 +467,54 @@ function FaqEditor({ faqs, onChange }: { faqs: Faq[]; onChange: (f: Faq[]) => vo
       <Button variant="secondary" className="mt-4" disabled={faqs.length >= 40} onClick={() => onChange([...faqs, { q: "", a: "" }])}>
         <Plus className="h-4 w-4" aria-hidden /> Add FAQ
       </Button>
+    </Card>
+  );
+}
+
+const HEADING_ROWS: { key: HeadingSection; label: string }[] = [
+  { key: "rooms", label: "Rooms section" },
+  { key: "amenities", label: "Amenities section" },
+  { key: "policies", label: "Policies section" },
+  { key: "location", label: "Location section" },
+  { key: "faq", label: "FAQ section" },
+];
+
+function HeadingsEditor({ headings, onChange }: { headings: Headings; onChange: (h: Headings) => void }) {
+  const update = (key: HeadingSection, field: "eyebrow" | "title" | "menu", value: string) =>
+    onChange({ ...headings, [key]: { ...headings[key], [field]: value } });
+  return (
+    <Card className="space-y-6 p-6">
+      <div>
+        <h3 className="font-medium">Website headings</h3>
+        <p className="text-sm text-ink-soft">
+          Rename the sections of this business&apos;s website, for example in Sesotho. Leave a box empty to use the
+          default shown in grey. The small line appears above the heading; the menu word appears in the top menu.
+        </p>
+      </div>
+      {HEADING_ROWS.map(({ key, label }) => {
+        const d = DEFAULT_HEADINGS[key];
+        return (
+          <fieldset key={key} className="grid gap-3 border-t border-line pt-4 sm:grid-cols-3">
+            <legend className="mb-2 text-sm font-medium">{label}</legend>
+            <Field label="Small line" htmlFor={`h-${key}-e`}>
+              <Input id={`h-${key}-e`} value={headings[key].eyebrow} placeholder={d.eyebrow} maxLength={40}
+                onChange={(e) => update(key, "eyebrow", e.target.value)} />
+            </Field>
+            <Field label="Heading" htmlFor={`h-${key}-t`}>
+              <Input id={`h-${key}-t`} value={headings[key].title} placeholder={d.title} maxLength={80}
+                onChange={(e) => update(key, "title", e.target.value)} />
+            </Field>
+            {d.menu ? (
+              <Field label="Menu word" htmlFor={`h-${key}-m`}>
+                <Input id={`h-${key}-m`} value={headings[key].menu} placeholder={d.menu} maxLength={24}
+                  onChange={(e) => update(key, "menu", e.target.value)} />
+              </Field>
+            ) : (
+              <p className="self-end pb-2 text-xs text-muted">Not in the top menu.</p>
+            )}
+          </fieldset>
+        );
+      })}
     </Card>
   );
 }
