@@ -104,6 +104,9 @@ export type Lead = {
   contact: string;
   checkIn: string;
   checkOut: string;
+  /** YYYY-MM-DD worked out by the model and validated (lib/dates.ts), or "". */
+  checkInDate: string;
+  checkOutDate: string;
   guests: number | null;
   roomPreference: string;
   notes: string;

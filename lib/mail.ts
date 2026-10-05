@@ -1,5 +1,6 @@
 import "server-only";
 import nodemailer from "nodemailer";
+import { formatStay } from "./dates";
 import type { Business, Lead } from "./types";
 
 /** Emails a new inquiry to the business owner. Never throws: the lead is
@@ -21,16 +22,18 @@ export async function notifyOwner(business: Business, lead: Lead, opts: { update
     // Guest-supplied text: keep it on one line in the subject header.
     const oneLine = (v: string) => v.replace(/[\r\n\t]+/g, " ").slice(0, 80);
     const line = (k: string, v: string | number | null) => (v ? `${k}: ${v}\n` : "");
+    const stay = formatStay(lead.checkInDate, lead.checkOutDate);
+    const said = [lead.checkIn, lead.checkOut].filter(Boolean).join(" → ");
     await transport.sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to,
-      subject: `${opts.updated ? "Updated" : "New"} booking inquiry — ${oneLine(lead.guestName || "guest")} (${oneLine(lead.checkIn || "dates TBC")})`,
+      subject: `${opts.updated ? "Updated" : "New"} booking inquiry — ${oneLine(lead.guestName || "guest")} (${oneLine(stay || lead.checkIn || "dates TBC")})`,
       text:
         `A guest ${opts.updated ? "updated their booking request" : "asked to book"} at ${business.profile.name}.\n\n` +
         line("Name", lead.guestName) +
         line("Contact", lead.contact) +
-        line("Check-in", lead.checkIn) +
-        line("Check-out", lead.checkOut) +
+        line("Stay", stay) +
+        line(stay ? "Guest wrote" : "Dates", said) +
         line("Guests", lead.guests) +
         line("Room", lead.roomPreference) +
         line("Notes", lead.notes) +

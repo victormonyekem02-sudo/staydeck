@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Inbox, MessageCircle, Trash2 } from "lucide-react";
 import { Button, api, cn, useToast } from "./ui";
+import { formatStay } from "@/lib/dates";
 import { shortDate } from "@/lib/format";
 import { LEAD_STATUSES, type Lead, type LeadStatus } from "@/lib/types";
 
@@ -85,7 +86,16 @@ export function LeadsTable({ leads: initial }: { leads: Lead[] }) {
                     {l.notes && <p className="mt-1 max-w-xs text-xs text-muted">{l.notes}</p>}
                   </td>
                   <td className="px-4 py-3 text-ink-soft">
-                    <p>{[l.checkIn, l.checkOut].filter(Boolean).join(" → ") || "Dates TBC"}</p>
+                    {formatStay(l.checkInDate, l.checkOutDate) ? (
+                      <>
+                        <p className="text-ink">{formatStay(l.checkInDate, l.checkOutDate)}</p>
+                        {(l.checkIn || l.checkOut) && (
+                          <p className="text-xs text-muted">Guest wrote: “{[l.checkIn, l.checkOut].filter(Boolean).join(" → ")}”</p>
+                        )}
+                      </>
+                    ) : (
+                      <p>{[l.checkIn, l.checkOut].filter(Boolean).join(" → ") || "Dates TBC"}</p>
+                    )}
                     <p className="text-xs text-muted">
                       {[l.guests ? `${l.guests} guest${l.guests > 1 ? "s" : ""}` : "", l.roomPreference].filter(Boolean).join(" · ")}
                     </p>

@@ -61,6 +61,8 @@ const SCHEMA = [
      contact TEXT NOT NULL DEFAULT '',
      check_in TEXT NOT NULL DEFAULT '',
      check_out TEXT NOT NULL DEFAULT '',
+     check_in_date TEXT NOT NULL DEFAULT '',
+     check_out_date TEXT NOT NULL DEFAULT '',
      guests INTEGER,
      room_preference TEXT NOT NULL DEFAULT '',
      notes TEXT NOT NULL DEFAULT '',
@@ -83,6 +85,11 @@ async function db(): Promise<Client> {
   if (!globalForDb.__staydeskInit) {
     globalForDb.__staydeskInit = (async () => {
       await c.batch(SCHEMA, "write");
+      // Migrations for databases created before a column existed.
+      const leadCols = new Set((await c.execute("PRAGMA table_info(leads)")).rows.map((r) => String(r.name)));
+      for (const col of ["check_in_date", "check_out_date"]) {
+        if (!leadCols.has(col)) await c.execute(`ALTER TABLE leads ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
+      }
       const { rows } = await c.execute("SELECT COUNT(*) AS n FROM businesses");
       if (Number(rows[0].n) === 0) {
         const now = new Date().toISOString();
@@ -283,6 +290,8 @@ function toLead(r: Row): Lead {
     contact: String(r.contact),
     checkIn: String(r.check_in),
     checkOut: String(r.check_out),
+    checkInDate: String(r.check_in_date ?? ""),
+    checkOutDate: String(r.check_out_date ?? ""),
     guests: r.guests === null || r.guests === undefined ? null : Number(r.guests),
     roomPreference: String(r.room_preference),
     notes: String(r.notes),
@@ -299,11 +308,11 @@ export async function createLead(
   const createdAt = now();
   await c.execute({
     sql: `INSERT INTO leads (id, business_id, conversation_id, created_at, guest_name, contact,
-          check_in, check_out, guests, room_preference, notes, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')`,
+          check_in, check_out, check_in_date, check_out_date, guests, room_preference, notes, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')`,
     args: [
       id, lead.businessId, lead.conversationId, createdAt, lead.guestName, lead.contact,
-      lead.checkIn, lead.checkOut, lead.guests, lead.roomPreference, lead.notes,
+      lead.checkIn, lead.checkOut, lead.checkInDate, lead.checkOutDate, lead.guests, lead.roomPreference, lead.notes,
     ],
   });
   return { ...lead, id, createdAt, status: "new" };
@@ -322,13 +331,14 @@ export async function getLeadByConversation(conversationId: string): Promise<Lea
 /** Overwrites the guest-supplied fields of an inquiry; keeps id, status and created_at. */
 export async function updateLeadDetails(
   id: string,
-  d: Pick<Lead, "guestName" | "contact" | "checkIn" | "checkOut" | "guests" | "roomPreference" | "notes">
+  d: Pick<Lead, "guestName" | "contact" | "checkIn" | "checkOut" | "checkInDate" | "checkOutDate" | "guests" | "roomPreference" | "notes">
 ): Promise<void> {
   const c = await db();
   await c.execute({
-    sql: `UPDATE leads SET guest_name = ?, contact = ?, check_in = ?, check_out = ?, guests = ?,
+    sql: `UPDATE leads SET guest_name = ?, contact = ?, check_in = ?, check_out = ?,
+          check_in_date = ?, check_out_date = ?, guests = ?,
           room_preference = ?, notes = ? WHERE id = ?`,
-    args: [d.guestName, d.contact, d.checkIn, d.checkOut, d.guests, d.roomPreference, d.notes, id],
+    args: [d.guestName, d.contact, d.checkIn, d.checkOut, d.checkInDate, d.checkOutDate, d.guests, d.roomPreference, d.notes, id],
   });
 }
 

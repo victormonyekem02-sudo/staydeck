@@ -8,6 +8,7 @@ import {
 import { TIME_ZONE, estimateCostUsd } from "@/lib/format";
 import { notifyOwner } from "@/lib/mail";
 import { localDate } from "@/lib/stats";
+import { normaliseStay } from "@/lib/dates";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 import type { ChatMessage } from "@/lib/types";
 
@@ -105,6 +106,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
         contact: inq.contact,
         checkIn: inq.checkIn,
         checkOut: inq.checkOut,
+        // Model-computed dates are only kept if they are plausible.
+        ...normaliseStay(inq.checkInDate, inq.checkOutDate, today),
         guests: inq.guests ?? null,
         roomPreference: inq.roomPreference,
         notes: inq.notes,
