@@ -72,6 +72,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ToastProvider>
+      <a href="#admin-main" className="skip-link">Skip to content</a>
       <div className="min-h-dvh lg:grid lg:grid-cols-[240px_1fr]">
         <aside className="sticky top-0 hidden h-dvh border-r border-line bg-card lg:block">{sidebar()}</aside>
 
@@ -98,7 +99,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        <main className="min-w-0 px-4 py-6 sm:px-8 sm:py-10">{children}</main>
+        <main id="admin-main" tabIndex={-1} className="min-w-0 px-4 py-6 focus:outline-none sm:px-8 sm:py-10">{children}</main>
       </div>
     </ToastProvider>
   );

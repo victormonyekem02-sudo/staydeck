@@ -4,7 +4,8 @@ import { BedDouble, Check, Clock, Mail, MapPin, MessageCircle, Phone, Users } fr
 import { ChatWidget } from "@/components/chat-widget";
 import { getBusinessBySlug } from "@/lib/db";
 import { onColor } from "@/lib/color";
-import { money } from "@/lib/format";
+import { baseUrl, money } from "@/lib/format";
+import type { Business } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ slug: string }> };
@@ -13,10 +14,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const b = await getBusinessBySlug((await params).slug);
   if (!b) return { title: "Not found" };
   const p = b.profile;
+  const description = (p.tagline || p.about || `Rooms and rates at ${p.name}.`).slice(0, 155);
   return {
     title: { absolute: `${p.name}${p.city ? ` · ${p.city}` : ""}` },
-    description: p.tagline || p.about.slice(0, 155),
-    openGraph: { title: p.name, description: p.tagline, images: p.heroImageUrl ? [p.heroImageUrl] : [] },
+    description,
+    alternates: { canonical: `/${b.slug}` },
+    // A paused site shows a placeholder page; keep it out of search results.
+    robots: b.active ? undefined : { index: false, follow: false },
+    // og:image comes from ./opengraph-image.tsx (a branded card for every business).
+    openGraph: { type: "website", title: p.name, description, url: `/${b.slug}` },
+    twitter: { card: "summary_large_image", title: p.name, description },
   };
 }
 
@@ -43,6 +50,12 @@ export default async function BusinessSite({ params }: Props) {
 
   return (
     <div className="bg-[#fbfaf7] text-ink" style={{ ["--brand" as string]: p.brandColor }}>
+      <a href="#main" className="skip-link">Skip to content</a>
+      <script
+        type="application/ld+json"
+        // "<" is escaped so profile text can never close the script tag.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(lodgingSchema(b, lowest)).replace(/</g, "\\u003c") }}
+      />
       <header className="sticky top-0 z-40 border-b border-black/5 bg-[#fbfaf7]/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <a href="#top" className="font-display text-xl font-semibold tracking-tight">{p.name}</a>
@@ -64,13 +77,14 @@ export default async function BusinessSite({ params }: Props) {
         </div>
       </header>
 
-      <main id="top">
+      <main id="main" tabIndex={-1} className="scroll-mt-16 focus:outline-none">
+        <span id="top" />
         {/* Hero */}
         <section className="relative isolate overflow-hidden">
           {p.heroImageUrl ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.heroImageUrl} alt="" className="absolute inset-0 -z-10 h-full w-full object-cover" />
+              <img src={p.heroImageUrl} alt="" fetchPriority="high" className="absolute inset-0 -z-10 h-full w-full object-cover" />
               <div className="absolute inset-0 -z-10 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
             </>
           ) : (
@@ -107,7 +121,7 @@ export default async function BusinessSite({ params }: Props) {
                 <article key={r.name} className="group overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5 transition-[box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:shadow-lg">
                   {r.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={r.imageUrl} alt={r.name} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                    <img src={r.imageUrl} alt={`${r.name} at ${p.name}`} loading="lazy" decoding="async" width={800} height={600} className="aspect-[4/3] w-full object-cover" />
                   ) : (
                     <div className="grid aspect-[4/3] place-items-center" style={{ background: `${p.brandColor}14` }}>
                       <BedDouble className="h-10 w-10" style={{ color: p.brandColor }} aria-hidden />
@@ -217,4 +231,33 @@ function SectionTitle({ eyebrow, title, color }: { eyebrow: string; title: strin
       <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
     </div>
   );
+}
+
+/** schema.org LodgingBusiness: lets search engines show name, location,
+ *  contact and price range. Only facts the owner entered are included. */
+function lodgingSchema(b: Business, lowest: number | null) {
+  const p = b.profile;
+  const url = `${baseUrl()}/${b.slug}`;
+  const highest = p.rooms.length ? Math.max(...p.rooms.map((r) => r.rate)) : null;
+  const clean = (o: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0)));
+  return clean({
+    "@context": "https://schema.org",
+    "@type": "LodgingBusiness",
+    "@id": url,
+    url,
+    name: p.name,
+    description: p.tagline || p.about || undefined,
+    image: p.heroImageUrl || `${url}/opengraph-image`,
+    telephone: p.phone || (p.whatsapp ? `+${p.whatsapp}` : undefined),
+    email: p.email || undefined,
+    address: p.address || p.city
+      ? clean({ "@type": "PostalAddress", streetAddress: p.address || undefined, addressLocality: p.city || undefined })
+      : undefined,
+    hasMap: p.mapUrl || undefined,
+    checkinTime: p.checkIn || undefined,
+    checkoutTime: p.checkOut || undefined,
+    priceRange: lowest !== null ? `${money(p.currency, lowest)}–${money(p.currency, highest ?? lowest)} per night` : undefined,
+    amenityFeature: p.amenities.map((name) => ({ "@type": "LocationFeatureSpecification", name, value: true })),
+  });
 }

@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const prod = process.env.NODE_ENV === "production";
 
 /* Content-Security-Policy. Limits where scripts, styles, fonts and frames
- * may come from, so injected markup can't load code from another host.
+ * may come from (fonts are self-hosted by next/font), so injected markup can't load code from another host.
  * script-src keeps 'unsafe-inline' because Next.js streams inline scripts;
  * removing it needs per-request nonces (see README). Images may come from
  * any https host because profiles use externally hosted photos. */
@@ -11,8 +11,8 @@ const csp = (frameAncestors: string) =>
   [
     "default-src 'self'",
     `script-src 'self' 'unsafe-inline'${prod ? "" : " 'unsafe-eval'"}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' https: data:",
     "connect-src 'self'",
     "frame-src 'self'",

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Lock } from "lucide-react";
+import { Eye, EyeOff, Lock } from "lucide-react";
 import { Button, Field, Input } from "@/components/ui";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [show, setShow] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,16 +40,28 @@ export default function LoginPage() {
         </div>
         <form onSubmit={submit} className="space-y-4 rounded-2xl border border-line bg-card p-6 shadow-sm">
           <Field label="Admin password" htmlFor="password" error={error}>
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              autoFocus
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-invalid={!!error}
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={show ? "text" : "password"}
+                autoComplete="current-password"
+                autoFocus
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={!!error}
+                className="pr-11"
+              />
+              <button
+                type="button"
+                onClick={() => setShow((s) => !s)}
+                aria-label={show ? "Hide password" : "Show password"}
+                aria-pressed={show}
+                className="absolute inset-y-0 right-0 grid w-10 cursor-pointer place-items-center text-muted hover:text-ink"
+              >
+                {show ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
           </Field>
           <Button type="submit" className="w-full" loading={loading}>
             Sign in

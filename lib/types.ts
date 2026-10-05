@@ -80,7 +80,7 @@ export const SlugSchema = z
 
 export const RESERVED_SLUGS = new Set([
   "admin", "api", "embed", "widget", "widget.js", "_next", "static", "public",
-  "login", "logout", "favicon.ico", "robots.txt", "sitemap.xml",
+  "login", "logout", "favicon.ico", "robots.txt", "sitemap.xml", "opengraph-image", "llms.txt",
 ]);
 
 export type Business = {

@@ -58,6 +58,16 @@ The database (`staydesk.db`) is created automatically, with The Stone Guest Hous
 - AI calls share a 22 s deadline per message (10 s per call, at most one retry), so a slow API returns a polite fallback instead of the request being killed at the 30 s limit.
 - Headers: CSP (scripts, styles, fonts and frames limited to this site and Google Fonts; images from any https host), HSTS in production, `X-Frame-Options: DENY` everywhere except `/embed/*`. CSP still allows inline scripts because Next.js needs them; removing that requires per-request nonces.
 
+## SEO and accessibility
+
+- `/robots.txt` allows business sites and blocks `/admin`, `/api/` and `/embed/`. `/sitemap.xml` lists the home page and every **live** business (paused ones are excluded and get `noindex`).
+- Each business page has a canonical URL, title and description, a generated share card (`/<slug>/opengraph-image`), and schema.org `LodgingBusiness` JSON-LD built only from facts entered in the admin.
+- **Set `NEXT_PUBLIC_BASE_URL` to the real domain**: canonical URLs, the sitemap and share cards all use it.
+- **Search Console:** add the property, choose "HTML tag", put the token in `GOOGLE_SITE_VERIFICATION`, redeploy, then submit `/sitemap.xml`.
+- Fonts are self-hosted with `next/font` (no render-blocking Google request); the hero image loads with high priority and room photos lazily.
+- Skip-to-content links on the public site and admin; the admin password field has a show/hide toggle.
+- Not done on purpose: cookie banner (the public site sets no cookies and has no tracking), `llms.txt` (no major search engine uses it), dark mode / site search / newsletter (don't fit a one-page guest-house site). Image compression depends on where owners host photos; ask them to upload images under ~300 KB.
+
 ## Metrics: read them like a statistician
 
 - **Inquiry rate** = conversations that produced an inquiry ÷ conversations, both counted over the conversations *started* this month (local time, `NEXT_PUBLIC_TIME_ZONE`). It is a proper proportion: one chat with a corrected booking counts once, not twice, and a deleted spam inquiry drops out.
