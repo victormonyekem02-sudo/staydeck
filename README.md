@@ -29,6 +29,8 @@ The database (`staydesk.db`) is created automatically, with The Stone Guest Hous
 
 ## Deploy (Vercel + Turso, both have free tiers)
 
+**Full walkthrough, including your domain and Google Search Console: [docs/SETUP.md](docs/SETUP.md).**
+
 1. **Database.** Create a Turso database: `turso db create staydesk`, then `turso db show staydesk --url` and `turso db tokens create staydesk`.
    The local SQLite file does **not** persist on Vercel; you must use Turso (or another libSQL host) in production.
 2. **Push** this folder to a GitHub repo and import it on Vercel.
